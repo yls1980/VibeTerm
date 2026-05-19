@@ -1,0 +1,35 @@
+<UserControl x:Class="VibeTerm.Views.TerminalView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+             Background="{StaticResource BackgroundBrush}">
+    <Grid>
+        <!-- WebView2 hosts the xterm.js terminal -->
+        <wv2:WebView2 x:Name="WebView"
+                      DefaultBackgroundColor="Transparent"/>
+
+        <!-- Shown while WebView2 / xterm.js is initialising -->
+        <Border x:Name="LoadingOverlay"
+                Background="{StaticResource BackgroundBrush}"
+                Visibility="Visible">
+            <TextBlock Text="Starting terminal..."
+                       Foreground="{StaticResource TextMutedBrush}"
+                       FontFamily="Consolas"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+        </Border>
+
+        <!-- Shown if the process exited -->
+        <Border x:Name="ExitedOverlay"
+                Background="#CC1E1E1E"
+                Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock x:Name="ExitedText"
+                           Text="Process exited"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           FontFamily="Consolas"
+                           TextAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

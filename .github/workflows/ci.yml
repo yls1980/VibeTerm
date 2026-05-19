@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 7.0.x
+
+      - name: Restore
+        run: dotnet restore VibeTerm.sln
+
+      - name: Build
+        run: dotnet build VibeTerm.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test VibeTerm.sln --configuration Release --no-build --verbosity normal

@@ -1,0 +1,41 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+artifacts/
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# User-specific IDE settings
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local agent/tool settings
+.claude/
+CLAUDE.md
+.codex/
+.agents/
+
+# Application runtime data accidentally created inside the repo
+settings.json
+logs/
+WebView2Cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# OS files
+.DS_Store
+Thumbs.db

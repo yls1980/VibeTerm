@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #1e1e1e; overflow: hidden; }
+  #term-container { width: 100%; height: 100%; padding: 4px; }
+  .xterm { height: 100%; }
+  .xterm-viewport { overflow-y: scroll !important; }
+  #loader {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #1e1e1e;
+    color: #858585; font-family: Consolas, monospace; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div id="loader">Starting terminal…</div>
+<div id="term-container"></div>
+
+<script>
+'use strict';
+
+// ── Asset loader: local first, CDN fallback ──────────────────────────────────
+const XTERM_VER = '5.3.0';
+const FIT_VER   = '0.8.0';
+const CDN       = 'https://cdn.jsdelivr.net/npm';
+
+const LOCAL = {
+  css:    'xterm.css',
+  js:     'xterm.js',
+  fitJs:  'xterm-addon-fit.js',
+};
+const REMOTE = {
+  css:    `${CDN}/xterm@${XTERM_VER}/css/xterm.css`,
+  js:     `${CDN}/xterm@${XTERM_VER}/lib/xterm.js`,
+  fitJs:  `${CDN}/xterm-addon-fit@${FIT_VER}/lib/xterm-addon-fit.js`,
+};
+
+function appendLink(href) {
+  const el = document.createElement('link');
+  el.rel = 'stylesheet'; el.href = href;
+  document.head.appendChild(el);
+  return el;
+}
+
+function loadScript(primary, fallback) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = primary;
+    s.onload = resolve;
+    s.onerror = () => {
+      if (!fallback) { reject(new Error('Cannot load ' + primary)); return; }
+      const s2 = document.createElement('script');
+      s2.src = fallback;
+      s2.onload = resolve;
+      s2.onerror = () => reject(new Error('Cannot load ' + fallback));
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s);
+  });
+}
+
+function loadCSS(primary, fallback) {
+  const link = appendLink(primary);
+  link.onerror = () => appendLink(fallback);
+}
+
+async function loadAssets() {
+  // CSS is non-blocking; load both just in case local fails
+  loadCSS(LOCAL.css, REMOTE.css);
+  // JS must be sequential (FitAddon needs Terminal defined first)
+  await loadScript(LOCAL.js,    REMOTE.js);
+  await loadScript(LOCAL.fitJs, REMOTE.fitJs);
+}
+
+// ── Terminal init (runs after assets are loaded) ─────────────────────────────
+function initTerminal() {
+  document.getElementById('loader').style.display = 'none';
+
+  const term = new Terminal({
+    cursorBlink:       true,
+    fontSize:          14,
+    fontFamily:        'Cascadia Mono, Cascadia Code, Consolas, "Courier New", monospace',
+    scrollback:        10000,
+    allowTransparency: false,
+    convertEol:        false,
+    theme: {
+      background:    '#1e1e1e', foreground:    '#d4d4d4',
+      cursor:        '#d4d4d4', cursorAccent:  '#1e1e1e',
+      selectionBackground: 'rgba(255,255,255,0.25)',
+      black:  '#1e1e1e', red:     '#f44747',
+      green:  '#6a9955', yellow:  '#dcdcaa',
+      blue:   '#569cd6', magenta: '#c586c0',
+      cyan:   '#4ec9b0', white:   '#d4d4d4',
+      brightBlack:   '#808080', brightRed:     '#f44747',
+      brightGreen:   '#6a9955', brightYellow:  '#dcdcaa',
+      brightBlue:    '#569cd6', brightMagenta: '#c586c0',
+      brightCyan:    '#4ec9b0', brightWhite:   '#ffffff',
+    },
+  });
+
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+
+  const container = document.getElementById('term-container');
+  term.open(container);
+  fitAddon.fit();
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function encodeUtf8Base64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  function decodeBase64ToBytes(b64) {
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+
+  function sendHost(msg) {
+    window.chrome.webview.postMessage(msg);
+  }
+
+  function sendHotkey(command) {
+    sendHost({ type: 'hotkey', command });
+  }
+
+  // ── Input → host ───────────────────────────────────────────────────────────
+  term.onData(data => sendHost({ type: 'input', data: encodeUtf8Base64(data) }));
+
+  // ── Custom key bindings ────────────────────────────────────────────────────
+  term.attachCustomKeyEventHandler(e => {
+    if (e.type !== 'keydown') return true;
+
+    const key = e.key.toLowerCase();
+
+    // Window-level shortcuts. WebView owns keyboard focus while xterm is active,
+    // so forward these to the WPF host explicitly.
+    if (e.ctrlKey && e.shiftKey && key === 't') {
+      sendHotkey('newTerminal');
+      return false;
+    }
+    if (e.ctrlKey && !e.shiftKey && key === 'w') {
+      sendHotkey('closeTerminal');
+      return false;
+    }
+    if (e.ctrlKey && key === 'tab') {
+      sendHotkey(e.shiftKey ? 'prevTerminal' : 'nextTerminal');
+      return false;
+    }
+    if (e.ctrlKey && (e.key === '+' || e.key === '=')) {
+      sendHotkey('increaseFont');
+      return false;
+    }
+    if (e.ctrlKey && (e.key === '-' || e.key === '_')) {
+      sendHotkey('decreaseFont');
+      return false;
+    }
+    if (e.ctrlKey && e.key === '0') {
+      sendHotkey('resetFont');
+      return false;
+    }
+
+    // Ctrl+C: copy selection if any, else send ^C to process
+    if (e.ctrlKey && e.key === 'c' && term.hasSelection()) {
+      navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+      return false;
+    }
+    // Ctrl+A: select all
+    if (e.ctrlKey && e.key === 'a') {
+      term.selectAll();
+      return false;
+    }
+    // Ctrl+V: paste
+    if (e.ctrlKey && e.key === 'v') {
+      navigator.clipboard.readText()
+        .then(t => { if (t) sendHost({ type: 'input', data: encodeUtf8Base64(t) }); })
+        .catch(() => {});
+      return false;
+    }
+    return true;
+  });
+
+  // ── Right-click: copy selection or paste ───────────────────────────────────
+  container.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (term.hasSelection()) {
+      navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+    } else {
+      navigator.clipboard.readText()
+        .then(t => { if (t) sendHost({ type: 'input', data: encodeUtf8Base64(t) }); })
+        .catch(() => {});
+    }
+  });
+
+  // ── Resize ─────────────────────────────────────────────────────────────────
+  let resizeTimer = null;
+  new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      fitAddon.fit();
+      sendHost({ type: 'resize', cols: term.cols, rows: term.rows });
+    }, 50);
+  }).observe(container);
+
+  // ── Messages from C# ───────────────────────────────────────────────────────
+  window.chrome.webview.addEventListener('message', ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    switch (msg.type) {
+      case 'output':
+        term.write(decodeBase64ToBytes(msg.data));
+        break;
+      case 'setFontSize':
+        term.options.fontSize = msg.size;
+        fitAddon.fit();
+        sendHost({ type: 'resize', cols: term.cols, rows: term.rows });
+        break;
+      case 'focus':
+        term.focus();
+        break;
+      case 'selectAll':
+        term.selectAll();
+        break;
+      case 'copyOrInterrupt':
+        if (term.hasSelection()) {
+          navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+        } else {
+          sendHost({ type: 'input', data: encodeUtf8Base64('\x03') });
+        }
+        break;
+      case 'clear':
+        term.clear();
+        break;
+      case 'replay':
+        if (msg.data) term.write(decodeBase64ToBytes(msg.data));
+        break;
+    }
+  });
+
+  // ── Signal ready ───────────────────────────────────────────────────────────
+  setTimeout(() => {
+    fitAddon.fit();
+    sendHost({ type: 'ready', cols: term.cols, rows: term.rows });
+  }, 150);
+
+  term.focus();
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+loadAssets()
+  .then(initTerminal)
+  .catch(err => {
+    document.getElementById('loader').textContent =
+      'Failed to load terminal assets: ' + err.message;
+  });
+</script>
+</body>
+</html>

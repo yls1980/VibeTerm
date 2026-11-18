@@ -6,6 +6,8 @@
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+    <NoWarn>$(NoWarn);CS9057</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,5 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VibeTerm\VibeTerm.csproj" />
+    <ProjectReference Include="..\VibeTerm.Mcp\VibeTerm.Mcp.csproj" />
   </ItemGroup>
 </Project>

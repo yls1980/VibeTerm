@@ -7,6 +7,7 @@ internal static class NativeMethods
 {
     internal const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     internal const uint CREATE_UNICODE_ENVIRONMENT   = 0x00000400;
+    internal const uint STARTF_USESTDHANDLES          = 0x00000100;
     internal const uint STILL_ACTIVE                 = 259;
     internal const uint INFINITE                     = 0xFFFFFFFF;
     internal const uint WAIT_OBJECT_0                = 0x00000000;

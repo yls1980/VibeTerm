@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using VibeTerm.Api;
 using VibeTerm.Settings;
 using VibeTerm.ViewModels;
 using VibeTerm.Views;
@@ -16,6 +17,7 @@ namespace VibeTerm;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
+    private readonly IDisposable _panelApi;
     private readonly Dictionary<int, TerminalView> _terminalViews = new();
     private readonly Queue<byte[]?> _pendingSnapshots = new();
     private const string TileSplitterTag = "TerminalTileSplitter";
@@ -56,7 +58,7 @@ public partial class MainWindow : Window
             for (int i = 0; i < count; i++)
             {
                 _pendingSnapshots.Enqueue(LoadSnapshotData(i));
-                _vm.AddTerminal(snapshots[i].DisplayName);
+                _vm.AddTerminal(snapshots[i].DisplayName, snapshots[i].WorkingDirectory);
             }
             int selIdx = Math.Clamp(App.Settings.SelectedTerminalIndex, 0, _vm.Terminals.Count - 1);
             if (_vm.Terminals.Count > 0)
@@ -68,6 +70,8 @@ public partial class MainWindow : Window
             for (int i = 0; i < terminalCount; i++)
                 _vm.AddTerminal();
         }
+
+        _panelApi = PanelApiHost.Start(_vm, Dispatcher);
     }
 
     // ── terminal view lifecycle ──────────────────────────────────────────────
@@ -386,7 +390,11 @@ public partial class MainWindow : Window
             {
                 byte[] data = vm.Session.GetOutputSnapshot();
                 try { File.WriteAllBytes(SnapshotPath(i), data); } catch { }
-                list.Add(new Settings.TerminalSessionSnapshot { DisplayName = vm.DisplayName });
+                list.Add(new Settings.TerminalSessionSnapshot
+                {
+                    DisplayName = vm.DisplayName,
+                    WorkingDirectory = vm.Session.WorkingDirectory ?? string.Empty
+                });
                 i++;
             }
             App.Settings.TerminalSnapshots = list;
@@ -542,12 +550,14 @@ public partial class MainWindow : Window
                 MessageBoxImage.Question);
             if (result == MessageBoxResult.Yes)
             {
+                _panelApi.Dispose();
                 SaveApplicationState();
                 _vm.Dispose();
                 Application.Current.Shutdown();
             }
             return;
         }
+        _panelApi.Dispose();
         SaveApplicationState();
         _vm.Dispose();
         base.OnClosing(e);

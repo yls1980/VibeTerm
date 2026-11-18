@@ -27,10 +27,13 @@ public sealed class TerminalSessionManager : IDisposable
         _logger = logger;
     }
 
-    public TerminalSession CreateSession(AppSettings settings, string? displayName = null)
+    public TerminalSession CreateSession(
+        AppSettings settings,
+        string? displayName = null,
+        string? workingDirectory = null)
     {
         string shell = ResolveShell(settings.ShellPath);
-        string? cwd  = ResolveWorkingDirectory(settings.StartupDirectory);
+        string? cwd  = ResolveWorkingDirectory(workingDirectory, settings.StartupDirectory);
 
         int id      = _nextId++;
         string name = displayName ?? $"PowerShell {id}";
@@ -103,10 +106,14 @@ public sealed class TerminalSessionManager : IDisposable
         return null;
     }
 
-    private static string? ResolveWorkingDirectory(string? configured)
+    private static string? ResolveWorkingDirectory(string? restored, string? configured)
     {
-        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
-            return configured;
+        foreach (string? candidate in new[] { restored, configured })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && Directory.Exists(candidate))
+                return Path.GetFullPath(candidate);
+        }
+
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 

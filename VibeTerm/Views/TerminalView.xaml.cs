@@ -235,6 +235,15 @@ public partial class TerminalView : UserControl
                     _session?.Resize(newCols, newRows);
                     break;
 
+                case "cwd":
+                    if (root.TryGetProperty("path", out var pathEl))
+                    {
+                        string? path = pathEl.GetString();
+                        if (!string.IsNullOrWhiteSpace(path))
+                            _session?.UpdateWorkingDirectory(path);
+                    }
+                    break;
+
                 case "hotkey":
                     if (root.TryGetProperty("command", out var commandEl))
                     {

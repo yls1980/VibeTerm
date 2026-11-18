@@ -27,6 +27,7 @@ public partial class SettingsWindow : Window
         MaskSensitiveCheck.IsChecked = _settings.MaskSensitiveInput;
         LogDirBox.Text            = _settings.LogDirectory;
         RetentionDaysBox.Text     = _settings.LogRetentionDays.ToString();
+        EnablePanelApiCheck.IsChecked = _settings.EnablePanelApi;
     }
 
     private void BrowseShell_Click(object sender, RoutedEventArgs e)
@@ -61,6 +62,8 @@ public partial class SettingsWindow : Window
 
         if (int.TryParse(RetentionDaysBox.Text, out int days))
             _settings.LogRetentionDays = days;
+
+        _settings.EnablePanelApi = EnablePanelApiCheck.IsChecked == true;
 
         App.SettingsService.Save(_settings);
         DialogResult = true;

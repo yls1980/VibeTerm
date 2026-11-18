@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Settings — VibeTerm"
-        Width="520" Height="540"
+        Width="520" Height="640"
         WindowStyle="SingleBorderWindow"
         ResizeMode="NoResize"
         Background="{StaticResource SurfaceBrush}"
@@ -122,6 +122,14 @@
                              BorderBrush="{StaticResource BorderBrush}"
                              Padding="6,4"/>
                 </Grid>
+
+                <TextBlock Text="Panel API" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}" Margin="0,16,0,8"/>
+                <CheckBox x:Name="EnablePanelApiCheck" Content="Enable local panel API for MCP"
+                          Foreground="{StaticResource TextBrush}" Margin="0,0,0,8"/>
+                <TextBlock Text="Applies on the next start. The API listens on 127.0.0.1 and can type into terminal panels."
+                           Foreground="{StaticResource WarningBrush}" FontSize="11"
+                           TextWrapping="Wrap" Margin="0,0,0,8"/>
 
             </StackPanel>
         </ScrollViewer>

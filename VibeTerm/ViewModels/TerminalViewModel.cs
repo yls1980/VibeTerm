@@ -85,6 +85,15 @@ public sealed class TerminalViewModel : INotifyPropertyChanged, IDisposable
         CancelRenameCommand = new RelayCommand(() => IsEditing = false);
     }
 
+    public void Rename(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        _session.Rename(name.Trim());
+        OnPropertyChanged(nameof(DisplayName));
+    }
+
     public void RequestClose() => CloseRequested?.Invoke(this, EventArgs.Empty);
 
     public event PropertyChangedEventHandler? PropertyChanged;

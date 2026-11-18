@@ -42,10 +42,17 @@ internal sealed class ConPtyProcess : IDisposable
         string? workingDirectory,
         short cols,
         short rows,
-        IReadOnlyDictionary<string, string>? environmentOverrides = null)
+        IReadOnlyDictionary<string, string>? environmentOverrides = null,
+        bool enablePowerShellIntegration = false)
     {
         var p = new ConPtyProcess();
-        p.Initialize(command, workingDirectory, cols, rows, environmentOverrides);
+        p.Initialize(
+            command,
+            workingDirectory,
+            cols,
+            rows,
+            environmentOverrides,
+            enablePowerShellIntegration);
         return p;
     }
 
@@ -54,7 +61,8 @@ internal sealed class ConPtyProcess : IDisposable
         string? workingDirectory,
         short cols,
         short rows,
-        IReadOnlyDictionary<string, string>? environmentOverrides)
+        IReadOnlyDictionary<string, string>? environmentOverrides,
+        bool enablePowerShellIntegration)
     {
         var sa = new NativeMethods.SECURITY_ATTRIBUTES
         {
@@ -71,7 +79,9 @@ internal sealed class ConPtyProcess : IDisposable
 
         var startupInfo = BuildStartupInfoEx(_pty.Handle);
         uint flags = NativeMethods.EXTENDED_STARTUPINFO_PRESENT | NativeMethods.CREATE_UNICODE_ENVIRONMENT;
-        IntPtr environmentBlock = BuildEnvironmentBlock(environmentOverrides);
+        IntPtr environmentBlock = BuildEnvironmentBlock(
+            environmentOverrides,
+            enablePowerShellIntegration);
 
         bool ok;
         try
@@ -114,9 +124,11 @@ internal sealed class ConPtyProcess : IDisposable
             FileAccess.Write, bufferSize: 4096, isAsync: false);
     }
 
-    private static IntPtr BuildEnvironmentBlock(IReadOnlyDictionary<string, string>? overrides)
+    private static IntPtr BuildEnvironmentBlock(
+        IReadOnlyDictionary<string, string>? overrides,
+        bool enablePowerShellIntegration)
     {
-        if (overrides == null || overrides.Count == 0)
+        if ((overrides == null || overrides.Count == 0) && !enablePowerShellIntegration)
             return IntPtr.Zero;
 
         var env = Environment.GetEnvironmentVariables()
@@ -126,7 +138,7 @@ internal sealed class ConPtyProcess : IDisposable
                 e => (string?)e.Value ?? string.Empty,
                 StringComparer.OrdinalIgnoreCase);
 
-        foreach (var pair in overrides)
+        foreach (var pair in overrides ?? new Dictionary<string, string>())
         {
             string name = pair.Key.Trim();
             if (string.IsNullOrWhiteSpace(name) || name.Contains('=') || name.Contains('\0'))
@@ -135,9 +147,10 @@ internal sealed class ConPtyProcess : IDisposable
             env[name] = pair.Value ?? string.Empty;
         }
 
-        string? profile = BuildPowerShellProfile(overrides);
-        if (profile != null)
+        if (enablePowerShellIntegration)
         {
+            string profile = BuildPowerShellProfile(
+                overrides ?? new Dictionary<string, string>());
             env["VIBETERM_PROFILE"] = profile;
             env["PSModulePath"] = env.TryGetValue("PSModulePath", out var psModulePath)
                 ? psModulePath
@@ -152,16 +165,27 @@ internal sealed class ConPtyProcess : IDisposable
         return Marshal.StringToHGlobalUni(block.ToString());
     }
 
-    private static string? BuildPowerShellProfile(IReadOnlyDictionary<string, string> overrides)
+    private static string BuildPowerShellProfile(IReadOnlyDictionary<string, string> overrides)
     {
-        var assignments = overrides
+        var lines = overrides
             .Where(p => IsValidPowerShellVariableName(p.Key))
             .OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
             .Select(p => $"Set-Variable -Name '{EscapePowerShellSingleQuoted(p.Key.Trim())}' -Value '{EscapePowerShellSingleQuoted(p.Value ?? string.Empty)}' -Scope Global")
-            .ToArray();
+            .ToList();
 
-        if (assignments.Length == 0)
-            return null;
+        lines.AddRange(new[]
+        {
+            "$global:__VibeTermOriginalPrompt = $function:prompt",
+            "function global:prompt {",
+            "    try {",
+            "        if ($null -ne $PWD.Provider -and $PWD.Provider.Name -eq 'FileSystem') {",
+            "            $vibeTermCwdUri = [Uri]::new($PWD.Path).AbsoluteUri",
+            "            Write-Host -NoNewline \"$([char]27)]7;$vibeTermCwdUri$([char]7)\"",
+            "        }",
+            "    } catch {}",
+            "    if ($null -ne $global:__VibeTermOriginalPrompt) { & $global:__VibeTermOriginalPrompt }",
+            "}"
+        });
 
         string profilePath = Path.Combine(
             Path.GetTempPath(),
@@ -169,7 +193,7 @@ internal sealed class ConPtyProcess : IDisposable
             $"profile_{Guid.NewGuid():N}.ps1");
 
         Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
-        File.WriteAllLines(profilePath, assignments, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.WriteAllLines(profilePath, lines, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return profilePath;
     }
 
@@ -220,7 +244,12 @@ internal sealed class ConPtyProcess : IDisposable
         {
             StartupInfo = new NativeMethods.STARTUPINFO
             {
-                cb = Marshal.SizeOf<NativeMethods.STARTUPINFOEX>()
+                cb = Marshal.SizeOf<NativeMethods.STARTUPINFOEX>(),
+                // Prevent a parent console or debugger from intercepting child output.
+                dwFlags = NativeMethods.STARTF_USESTDHANDLES,
+                hStdInput = IntPtr.Zero,
+                hStdOutput = IntPtr.Zero,
+                hStdError = IntPtr.Zero
             },
             lpAttributeList = _attrList
         };

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using VibeTerm.Api;
 using VibeTerm.ConPTY;
 using VibeTerm.Logging;
 
@@ -23,13 +24,14 @@ public sealed class TerminalSession : IDisposable
 
     private readonly object     _bufferLock            = new();
     private readonly List<byte[]> _outputBuffer        = new();
+    private readonly TerminalTextLog _textLog          = new();
     private long                _outputBufferSizeBytes;
     private const long          MaxOutputBufferBytes   = 1 * 1024 * 1024; // 1 MB rolling
 
     public int             Id               { get; }
     public string          DisplayName      { get; set; }
     public string          ShellPath        { get; }
-    public string?         WorkingDirectory { get; }
+    public string?         WorkingDirectory { get; private set; }
     public IReadOnlyDictionary<string, string> EnvironmentOverrides { get; private set; }
     public TerminalStatus  Status           { get; private set; } = TerminalStatus.Starting;
     public DateTime        CreatedAt        { get; } = DateTime.Now;
@@ -65,7 +67,13 @@ public sealed class TerminalSession : IDisposable
             string commandLine = BuildShellCommandLine();
             var environment = BuildEffectiveEnvironmentOverrides();
 
-            _process = ConPtyProcess.Start(commandLine, WorkingDirectory, cols, rows, environment);
+            _process = ConPtyProcess.Start(
+                commandLine,
+                WorkingDirectory,
+                cols,
+                rows,
+                environment,
+                IsPowerShell());
             Status = TerminalStatus.Active;
             RaiseStatusChanged();
 
@@ -86,10 +94,8 @@ public sealed class TerminalSession : IDisposable
     private string BuildShellCommandLine()
     {
         string quotedShell = QuoteCommandLineArgument(ShellPath);
-        string fileName = Path.GetFileName(ShellPath);
 
-        if (fileName.Equals("pwsh.exe", StringComparison.OrdinalIgnoreCase) ||
-            fileName.Equals("powershell.exe", StringComparison.OrdinalIgnoreCase))
+        if (IsPowerShell())
         {
             return $"{quotedShell} -NoLogo -NoExit -Command \"if ($env:VIBETERM_PROFILE) {{ . $env:VIBETERM_PROFILE }}\"";
         }
@@ -100,16 +106,20 @@ public sealed class TerminalSession : IDisposable
     private IReadOnlyDictionary<string, string> BuildEffectiveEnvironmentOverrides()
     {
         var environment = new Dictionary<string, string>(EnvironmentOverrides, StringComparer.OrdinalIgnoreCase);
-        string fileName = Path.GetFileName(ShellPath);
 
-        if ((fileName.Equals("pwsh.exe", StringComparison.OrdinalIgnoreCase) ||
-             fileName.Equals("powershell.exe", StringComparison.OrdinalIgnoreCase)) &&
-            !environment.ContainsKey("POWERSHELL_UPDATECHECK"))
+        if (IsPowerShell() && !environment.ContainsKey("POWERSHELL_UPDATECHECK"))
         {
             environment["POWERSHELL_UPDATECHECK"] = "Off";
         }
 
         return environment;
+    }
+
+    private bool IsPowerShell()
+    {
+        string fileName = Path.GetFileName(ShellPath);
+        return fileName.Equals("pwsh.exe", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("powershell.exe", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string QuoteCommandLineArgument(string value) =>
@@ -182,6 +192,21 @@ public sealed class TerminalSession : IDisposable
         catch (ObjectDisposedException) { }
     }
 
+    public void UpdateWorkingDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+            return;
+
+        try
+        {
+            WorkingDirectory = Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException)
+        {
+            // Ignore malformed paths received from terminal escape sequences.
+        }
+    }
+
     public async Task ApplyEnvironmentAsync(IReadOnlyDictionary<string, string> overrides)
     {
         var previous = EnvironmentOverrides;
@@ -226,7 +251,13 @@ public sealed class TerminalSession : IDisposable
                 _outputBuffer.RemoveAt(0);
             }
         }
+
+        _textLog.Append(data);
     }
+
+    public TextChunk ReadText(long since, int maxChars) => _textLog.Read(since, maxChars);
+
+    public long TextOffset => _textLog.NextOffset;
 
     public byte[] GetOutputSnapshot()
     {

@@ -78,11 +78,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             () => _ = ApplyEnvironmentVariablesAsync());
     }
 
-    public void AddTerminal(string? displayName = null)
+    public TerminalViewModel AddTerminal(string? displayName = null, string? workingDirectory = null)
     {
         SaveEnvironmentVariables();
 
-        var session = _manager.CreateSession(Settings, displayName);
+        var session = _manager.CreateSession(Settings, displayName, workingDirectory);
         var vm      = new TerminalViewModel(session);
         vm.CloseRequested += (_, _) => _ = CloseTerminalAsync(vm);
 
@@ -91,6 +91,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         TerminalAdded?.Invoke(this, vm);
         SelectedTerminal = vm;
+        return vm;
     }
 
     public async Task CloseTerminalAsync(TerminalViewModel? vm)

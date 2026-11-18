@@ -1,0 +1,28 @@
+---
+description: Память проекта в папке obsidian/ (хранилище Obsidian)
+alwaysApply: true
+---
+
+# Память Obsidian
+
+Корневая папка хранилища: `obsidian/` в корне этого проекта.
+
+Перед ответом прочитай:
+- `obsidian/00-index.md`
+- `obsidian/memory/project.md`
+- `obsidian/chats/YYYY-MM-DD.md` за сегодня
+- если задача узкая: `obsidian/tasks/<задача>/MEMORY.md`
+
+Пиши память только в `obsidian/`:
+- факты: `obsidian/memory/project.md`
+- запрос и ответ за день: `obsidian/chats/YYYY-MM-DD.md`
+- память задачи: `obsidian/tasks/<слаг>/MEMORY.md`
+
+Формат: Markdown + YAML frontmatter, ссылки `[[memory/project]]`.
+Не копируй секреты (`.env`, пароли, токены, `secur.py`).
+
+Если `obsidian/` нет, запусти:
+
+```powershell
+python "$env:USERPROFILE\.cursor\skills\obsidian-project-memory\scripts\init-vault.py"
+```

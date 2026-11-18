@@ -41,6 +41,121 @@ public sealed class TerminalSessionManagerTests
         Assert.Single(manager.Sessions);
     }
 
+    [Fact]
+    public void CreateSessionPrefersRestoredWorkingDirectory()
+    {
+        using var temp = new TempDirectory();
+        string configuredDirectory = Path.Combine(temp.Path, "configured");
+        string restoredDirectory = Path.Combine(temp.Path, "restored");
+        Directory.CreateDirectory(configuredDirectory);
+        Directory.CreateDirectory(restoredDirectory);
+
+        using var logger = CreateDisabledLogger(temp.Path);
+        using var manager = new TerminalSessionManager(logger);
+        var settings = new AppSettings
+        {
+            StartupDirectory = configuredDirectory,
+            EnableLogging = false,
+            LogDirectory = temp.Path
+        };
+
+        var created = manager.CreateSession(settings, workingDirectory: restoredDirectory);
+
+        Assert.Equal(restoredDirectory, created.WorkingDirectory);
+    }
+
+    [Fact]
+    public void CreateSessionFallsBackWhenRestoredWorkingDirectoryIsMissing()
+    {
+        using var temp = new TempDirectory();
+        string configuredDirectory = Path.Combine(temp.Path, "configured");
+        Directory.CreateDirectory(configuredDirectory);
+
+        using var logger = CreateDisabledLogger(temp.Path);
+        using var manager = new TerminalSessionManager(logger);
+        var settings = new AppSettings
+        {
+            StartupDirectory = configuredDirectory,
+            EnableLogging = false,
+            LogDirectory = temp.Path
+        };
+
+        var created = manager.CreateSession(
+            settings,
+            workingDirectory: Path.Combine(temp.Path, "missing"));
+
+        Assert.Equal(configuredDirectory, created.WorkingDirectory);
+    }
+
+    [Fact]
+    public void SessionTracksLatestWorkingDirectory()
+    {
+        using var temp = new TempDirectory();
+        string nextDirectory = Path.Combine(temp.Path, "next");
+        Directory.CreateDirectory(nextDirectory);
+
+        using var logger = CreateDisabledLogger(temp.Path);
+        using var manager = new TerminalSessionManager(logger);
+        var session = manager.CreateSession(new AppSettings
+        {
+            EnableLogging = false,
+            LogDirectory = temp.Path
+        });
+
+        session.UpdateWorkingDirectory(nextDirectory);
+
+        Assert.Equal(nextDirectory, session.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task PowerShellIntegrationEmitsWorkingDirectoryMarkerThroughConPty()
+    {
+        using var temp = new TempDirectory();
+        string nextDirectory = Path.Combine(temp.Path, "next");
+        Directory.CreateDirectory(nextDirectory);
+
+        using var logger = CreateDisabledLogger(temp.Path);
+        using var manager = new TerminalSessionManager(logger);
+        var session = manager.CreateSession(new AppSettings
+        {
+            StartupDirectory = temp.Path,
+            EnableLogging = false,
+            LogDirectory = temp.Path
+        });
+
+        try
+        {
+            session.Start();
+            string initialMarker = "]7;" + new Uri(temp.Path).AbsoluteUri;
+            string output = await WaitForOutputAsync(session, initialMarker);
+            Assert.Contains(initialMarker, output);
+
+            string escapedDirectory = nextDirectory.Replace("'", "''");
+            string command = $"Set-Location -LiteralPath '{escapedDirectory}'{Environment.NewLine}";
+            await session.SendInputAsync(System.Text.Encoding.UTF8.GetBytes(command));
+
+            string changedMarker = "]7;" + new Uri(nextDirectory).AbsoluteUri;
+            output = await WaitForOutputAsync(session, changedMarker);
+            Assert.Contains(changedMarker, output);
+        }
+        finally
+        {
+            await session.StopAsync();
+        }
+    }
+
+    private static async Task<string> WaitForOutputAsync(TerminalSession session, string expected)
+    {
+        string output = string.Empty;
+        for (int attempt = 0; attempt < 50 && !output.Contains(expected); attempt++)
+        {
+            await Task.Delay(100);
+            output = System.Text.Encoding.UTF8.GetString(session.GetOutputSnapshot());
+        }
+
+        return output;
+    }
+
     [Theory]
     [InlineData(TerminalStatus.Starting, false)]
     [InlineData(TerminalStatus.Active, true)]

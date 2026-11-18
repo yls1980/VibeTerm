@@ -133,6 +133,26 @@ function initTerminal() {
     sendHost({ type: 'hotkey', command });
   }
 
+  function fileUriToWindowsPath(value) {
+    try {
+      const uri = new URL(value);
+      if (uri.protocol !== 'file:') return null;
+
+      const uriPath = decodeURIComponent(uri.pathname).replace(/\//g, '\\');
+      if (uri.hostname) return `\\\\${uri.hostname}${uriPath}`;
+      return uriPath.replace(/^\\(?=[a-zA-Z]:)/, '');
+    } catch {
+      return null;
+    }
+  }
+
+  // PowerShell integration emits OSC 7 whenever its current directory changes.
+  term.parser.registerOscHandler(7, data => {
+    const path = fileUriToWindowsPath(data);
+    if (path) sendHost({ type: 'cwd', path });
+    return true;
+  });
+
   // ── Input → host ───────────────────────────────────────────────────────────
   term.onData(data => sendHost({ type: 'input', data: encodeUtf8Base64(data) }));
 

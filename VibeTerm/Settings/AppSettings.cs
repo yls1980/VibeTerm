@@ -31,6 +31,9 @@ public sealed class AppSettings
     public int                           SelectedTerminalIndex { get; set; }
     public List<TerminalSessionSnapshot> TerminalSnapshots     { get; set; } = new();
 
+    // Local loopback API used by the MCP server. A change applies on the next start.
+    public bool EnablePanelApi { get; set; } = true;
+
     // Logging
     public bool   EnableLogging        { get; set; } = true;
     public string LogDirectory         { get; set; } = DefaultLogDirectory();
@@ -62,5 +65,6 @@ public sealed class WindowStateSettings
 
 public sealed class TerminalSessionSnapshot
 {
-    public string DisplayName { get; set; } = string.Empty;
+    public string DisplayName      { get; set; } = string.Empty;
+    public string WorkingDirectory { get; set; } = string.Empty;
 }

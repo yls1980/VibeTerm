@@ -131,6 +131,18 @@ dotnet publish .\VibeTerm\VibeTerm.csproj -c Release -r win-x64 --self-contained
 | `Ctrl+V` | Вставить текст из буфера обмена |
 | `Ctrl+A` | Выделить весь вывод терминала |
 
+## Управление панелями через MCP
+
+Каждая панель - отдельный PowerShell. Пока окно VibeTerm открыто, им можно управлять из редактора.
+
+Приложение поднимает локальный программный интерфейс на `127.0.0.1`. Рядом есть программа `VibeTerm.Mcp`. Cursor запускает её как сервер MCP и через неё печатает в панели, читает вывод, открывает и закрывает панели. Инструменты `list_agents`, `ask_agent` и `ask_agents` задают вопрос агентам, которые уже работают в панелях. Сами агенты сервер не запускает.
+
+MCP (Model Context Protocol) - способ, которым редактор вызывает внешние инструменты.
+
+Подробности, список инструментов и пример подключения: [docs/panel-api.md](docs/panel-api.md).
+
+Флажок `Enable local panel API for MCP` в настройках включает интерфейс со следующего запуска. По умолчанию он включён.
+
 ## Логи
 
 Файлы логов находятся в:
@@ -192,6 +204,10 @@ VibeTerm/
 ├── Settings/
 │   ├── AppSettings.cs
 │   └── SettingsService.cs
+├── Api/
+│   ├── PanelApiServer.cs
+│   ├── PanelApiHost.cs
+│   └── WpfPanelController.cs
 ├── Terminal/
 │   ├── TerminalStatus.cs
 │   ├── TerminalSession.cs
@@ -213,6 +229,11 @@ VibeTerm.Tests/
 ├── TerminalSessionManagerTests.cs
 ├── TerminalViewModelModeTests.cs
 └── VibeTerm.Tests.csproj
+
+VibeTerm.Mcp/
+├── Program.cs
+├── PanelTools.cs
+└── VibeTermApiClient.cs
 ```
 
 ## Известные ограничения
@@ -222,6 +243,7 @@ VibeTerm.Tests/
 3. Все WebView2-контролы используют общий user data folder: `%APPDATA%\VibeTerm\WebView2Cache`.
 4. Переменные окружения из панели применяются к PowerShell-сессиям через PowerShell-команды; для других shell это поведение может потребовать отдельной адаптации.
 5. Первый resize терминала может происходить с небольшой задержкой после инициализации xterm.js.
+6. Программный интерфейс панелей принимает соединения только с этого компьютера. Если открыты два окна, файл адреса указывает на последнее. Чтение вывода возвращает текст текущего процесса без цветов, а не точную копию экрана.
 
 ## Следующие улучшения
 

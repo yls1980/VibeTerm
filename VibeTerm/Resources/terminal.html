@@ -146,10 +146,13 @@ function initTerminal() {
     }
   }
 
-  // PowerShell integration emits OSC 7 whenever its current directory changes.
+  let replaying = false;
+  // Only live shell output can update the panel's working directory.
   term.parser.registerOscHandler(7, data => {
-    const path = fileUriToWindowsPath(data);
-    if (path) sendHost({ type: 'cwd', path });
+    if (!replaying) {
+      const path = fileUriToWindowsPath(data);
+      if (path) sendHost({ type: 'cwd', path });
+    }
     return true;
   });
 
@@ -199,15 +202,22 @@ function initTerminal() {
       term.selectAll();
       return false;
     }
-    // Ctrl+V: paste
-    if (e.ctrlKey && e.key === 'v') {
-      navigator.clipboard.readText()
-        .then(t => { if (t) sendHost({ type: 'input', data: encodeUtf8Base64(t) }); })
-        .catch(() => {});
+    // Native clipboard access supports both Explorer files and screenshot bitmaps.
+    if (!e.altKey && ((e.ctrlKey && (key === 'v' || e.code === 'KeyV')) ||
+        (!e.ctrlKey && e.shiftKey && key === 'insert'))) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) sendHost({ type: 'paste' });
       return false;
     }
     return true;
   });
+
+  container.addEventListener('paste', e => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    sendHost({ type: 'paste' });
+  }, true);
 
   // ── Right-click: copy selection or paste ───────────────────────────────────
   container.addEventListener('contextmenu', e => {
@@ -215,9 +225,7 @@ function initTerminal() {
     if (term.hasSelection()) {
       navigator.clipboard.writeText(term.getSelection()).catch(() => {});
     } else {
-      navigator.clipboard.readText()
-        .then(t => { if (t) sendHost({ type: 'input', data: encodeUtf8Base64(t) }); })
-        .catch(() => {});
+      sendHost({ type: 'paste' });
     }
   });
 
@@ -236,6 +244,10 @@ function initTerminal() {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
     switch (msg.type) {
+      case 'pasteText':
+        // Honour bracketed paste in interactive CLI dialogs; never append Enter.
+        term.paste(msg.text);
+        break;
       case 'output':
         term.write(decodeBase64ToBytes(msg.data));
         break;
@@ -261,7 +273,11 @@ function initTerminal() {
         term.clear();
         break;
       case 'replay':
-        if (msg.data) term.write(decodeBase64ToBytes(msg.data));
+        if (msg.data) {
+          const output = decodeBase64ToBytes(msg.data);
+          replaying = true;
+          term.write(output, () => { replaying = false; });
+        }
         break;
     }
   });

@@ -24,6 +24,7 @@ public partial class TerminalView : UserControl
     private bool               _disposed;
     private byte[]?            _pendingSnapshot;
     private double             _initialFontSize;
+    private bool               _pasteInProgress;
 
     private static readonly Lazy<Task<CoreWebView2Environment>> SharedEnvironment = new(CreateSharedEnvironmentAsync);
 
@@ -111,16 +112,6 @@ public partial class TerminalView : UserControl
 
         core.WebMessageReceived += OnWebMessageReceived;
         core.NavigationCompleted += (_, _) => { /* terminal.html sends 'ready' when xterm is ready */ };
-        core.PermissionRequested += (_, args) =>
-        {
-            if (args.PermissionKind == CoreWebView2PermissionKind.ClipboardRead &&
-                Uri.TryCreate(args.Uri, UriKind.Absolute, out var uri) &&
-                uri.Host.Equals("app.local", StringComparison.OrdinalIgnoreCase))
-            {
-                args.State = CoreWebView2PermissionState.Allow;
-                args.Handled = true;
-            }
-        };
     }
 
     private void OnWebViewPreviewKeyDown(object sender, KeyEventArgs e)
@@ -130,15 +121,12 @@ public partial class TerminalView : UserControl
         bool shift = modifiers.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
 
-        if (ctrl && !shift && key == Key.V)
+        if (!modifiers.HasFlag(ModifierKeys.Alt) &&
+            ((ctrl && key == Key.V) || (!ctrl && shift && key == Key.Insert)))
         {
-            if (Clipboard.ContainsText())
-            {
-                string text = Clipboard.GetText();
-                if (!string.IsNullOrEmpty(text))
-                    _ = _session?.SendInputAsync(Encoding.UTF8.GetBytes(text));
-            }
             e.Handled = true;
+            if (!e.IsRepeat)
+                _ = PasteClipboardAsync();
             return;
         }
 
@@ -187,6 +175,35 @@ public partial class TerminalView : UserControl
         catch { }
     }
 
+    private async Task PasteClipboardAsync()
+    {
+        var session = _session;
+        if (_pasteInProgress || _disposed || !_terminalReady ||
+            session?.Status is not (TerminalStatus.Active or TerminalStatus.Running))
+            return;
+
+        _pasteInProgress = true;
+        try
+        {
+            // Capture this panel's directory before asynchronous file I/O.
+            string? text = await ClipboardPasteService.ReadAsync(session.WorkingDirectory);
+            if (!_disposed && !string.IsNullOrEmpty(text) &&
+                session.Status is TerminalStatus.Active or TerminalStatus.Running)
+                PostRaw(JsonSerializer.Serialize(new { type = "pasteText", text }));
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed)
+                MessageBox.Show(Window.GetWindow(this),
+                    $"Не удалось вставить данные из буфера обмена.\n{ex.Message}",
+                    "VibeTerm — вставка", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _pasteInProgress = false;
+        }
+    }
+
     private void PostRaw(string json)
     {
         try { WebView.CoreWebView2?.PostWebMessageAsString(json); }
@@ -195,14 +212,19 @@ public partial class TerminalView : UserControl
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        if (e.Source != "https://app.local/terminal.html") return;
         try
         {
-            var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
             var root = doc.RootElement;
             string type = root.GetProperty("type").GetString() ?? "";
 
             switch (type)
             {
+                case "paste":
+                    _ = PasteClipboardAsync();
+                    break;
+
                 case "ready":
                     _terminalReady = true;
                     short cols = (short)(root.TryGetProperty("cols", out var c) ? c.GetInt32() : 80);
